@@ -1,22 +1,36 @@
-from flask import Flask
-from pandas_datareader import data as pdr
-import datetime
-from datetime import date
+from flask import Flask, request, jsonify, abort, make_response
+from stockDao import findMongo, insertMongo
+from serviceStock import createStock
 
 
 
 app = Flask(__name__)
 
-@app.route('/signal/<ticker>')
-def hello_world(ticker):
-    today = date.today()
-    start_date= today - datetime.timedelta(days=365)
-    data = pdr.get_data_yahoo(ticker, start=start_date, end=today)
-    data['SMA30'] =  data['Adj Close'].rolling(window=30).mean()
-    data['SMA100'] = data['Adj Close'].rolling(window=100).mean()
-    SMA30 = data['SMA30'].array[-1]
-    SMA100 = data['SMA100'].array[-1]
-    price = data['Adj Close'].array[-1]
-    lastDate = data.index.array[-1]
-    stock = {"ticker" : ticker, "lastSMA30" : SMA30, "lastSMA100": SMA100, "lastPrice": price, "date": lastDate.strftime("%m/%d/%Y")}
-    return stock
+@app.errorhandler(404)
+def not_found(error):
+    return make_response(jsonify({'error': 'Ticker Not found'}), 404)
+
+
+@app.route('/api/v1.0/<ticker>', methods=['GET'])
+def get_ticker(ticker):
+
+    stock = createStock(ticker)
+    res = findMongo(ticker)
+
+    if(stock is None or res is None):
+        abort(404)
+
+    if(stock['lastPrice'] <= res['price']):
+        return jsonify({"Alert" : "Sell"})
+    else:
+        return jsonify({"Alert" : "Hold"})
+
+
+@app.route('/api/v1.0/insert-ticker', methods=['POST'])
+def insert_ticker():
+    ticker = request.json['ticker']
+    price = request.json['price']
+    insertMongo({"ticker": ticker, "price": price})
+    return jsonify("Alert inserted")
+    
+
